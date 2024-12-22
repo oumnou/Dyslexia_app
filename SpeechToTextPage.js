@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, Button, StyleSheet } from 'react-native';
-import Voice from '@react-native-voice/voice'; // Importing the voice library
+import { View, Text, Button, StyleSheet, PermissionsAndroid } from 'react-native';
+import Voice from '@react-native-voice/voice';
 
 const SpeechToText = () => {
   const [started, setStarted] = useState(false);
@@ -8,57 +8,118 @@ const SpeechToText = () => {
   const [error, setError] = useState('');
 
   useEffect(() => {
-    // Initialize voice recognition when component mounts
-    console.log(Voice)
-    Voice.onSpeechStart = onSpeechStart;
-    Voice.onSpeechRecognized = onSpeechRecognized;
-    Voice.onSpeechResults = onSpeechResults;
-    Voice.onSpeechError = onSpeechError;
+    // Initialize voice recognition when the component is mounted
+    const initializeVoice = async () => {
+      try {
+        if (Voice) {
+          // Check if the Voice module is available before setting event handlers
+          Voice.onSpeechStart = onSpeechStart;
+          Voice.onSpeechRecognized = onSpeechRecognized;
+          Voice.onSpeechResults = onSpeechResults;
+          Voice.onSpeechError = onSpeechError;
 
+          console.log('Voice module initialized successfully');
+        } else {
+          setError('Voice module not available');
+        }
+      } catch (e) {
+        console.error("Error initializing voice module: ", e);
+        setError("Error initializing voice module");
+      }
+    };
+
+    // Initialize voice recognition
+    initializeVoice();
+
+    // Cleanup event listeners when the component unmounts
     return () => {
-      // Cleanup event listeners when component unmounts
-      Voice.destroy().then(Voice.removeAllListeners);
+      if (Voice) {
+        Voice.removeAllListeners();
+        console.log('Voice listeners removed');
+      }
     };
   }, []);
 
-  // Start voice recognition
-  const startRecognizing = async () => {
+  const checkPermission = async () => {
     try {
-      setRecognized('');
-      setStarted(true);
-      await Voice.start('en-US'); // You can change this to your preferred language code
+      const granted = await PermissionsAndroid.request(
+        PermissionsAndroid.PERMISSIONS.RECORD_AUDIO,
+        {
+          title: "Microphone Permission",
+          message: "We need access to your microphone to record speech",
+          buttonNeutral: "Ask Me Later",
+          buttonNegative: "Cancel",
+          buttonPositive: "OK"
+        }
+      );
+
+      if (granted === PermissionsAndroid.RESULTS.GRANTED) {
+        console.log("Microphone permission granted");
+        return true;
+      } else {
+        console.log("Microphone permission denied");
+        setError('Microphone permission denied');
+        return false;
+      }
+    } catch (err) {
+      console.warn(err);
+      setError('Failed to request permission');
+      return false;
+    }
+  };
+
+  const startRecognizing = async () => {
+    const permissionGranted = await checkPermission();
+    if (!permissionGranted) {
+      return;
+    }
+
+    try {
+      if (Voice) {
+        setRecognized('');
+        setStarted(true);
+        //await Voice.start('en-US'); // Use start() method, not startSpeech()
+      } else {
+        setError("Voice module is not initialized properly.");
+      }
     } catch (e) {
+      console.error(e);
       setError(e.message);
     }
   };
 
-  // Stop voice recognition
   const stopRecognizing = async () => {
     try {
-      setStarted(false);
-      await Voice.stop();
+      if (Voice) {
+        setStarted(false);
+        await Voice.stop(); // Use stop() method, not stopSpeech()
+      } else {
+        setError("Voice module is not initialized properly.");
+      }
     } catch (e) {
+      console.error(e);
       setError(e.message);
     }
   };
 
-  // Speech started callback
   const onSpeechStart = () => {
     console.log('Speech started');
   };
 
-  // Speech recognized callback
   const onSpeechRecognized = () => {
     console.log('Speech recognized');
   };
 
-  // Speech results callback
   const onSpeechResults = (e) => {
-    setRecognized(e.value[0]); // The first result is the most accurate
+    if (e.value && e.value[0]) {
+      setRecognized(e.value[0]); // The first result is the most accurate
+    } else {
+      setRecognized("No speech recognized.");
+    }
   };
 
-  // Speech error callback
   const onSpeechError = (e) => {
+    console.error("Speech error: ", e.error);
     setError(e.error.message);
   };
 
@@ -66,14 +127,9 @@ const SpeechToText = () => {
     <View style={styles.container}>
       <Text style={styles.header}>Speech to Text</Text>
       <Text style={styles.instructions}>Press the button and start speaking.</Text>
-
-      {/* Display the results */}
       <Text style={styles.result}>{recognized}</Text>
-
-      {/* Error message */}
       {error ? <Text style={styles.error}>Error: {error}</Text> : null}
 
-      {/* Start/Stop Button */}
       {!started ? (
         <Button title="Start Recognizing" onPress={startRecognizing} />
       ) : (
